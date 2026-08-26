@@ -61,19 +61,40 @@ chmod +x /etc/cron.hourly/$BIN"
   [[ "$DST" = /* ]] || DST="$DIR/$DST"
   mkdir -p "$DST" || { echo "Failed to create destination directory $DST"; return 1; }
 
-  # Safely collect existing snapshots using null-delimited find
+  # Explicit filesystem boundary validation for BTRFS snapshots
+  local src_fs dest_fs
+  src_fs=$(stat -f -c %T "$DIR" 2>/dev/null || stat -f %T "$DIR" 2>/dev/null)
+  dest_fs=$(stat -f -c %T "$DST" 2>/dev/null || stat -f %T "$DST" 2>/dev/null)
+
+  if [[ "$src_fs" != "btrfs" ]] || [[ "$dest_fs" != "btrfs" ]]; then
+    echo "Error: Both source ($DIR) and destination ($DST) must reside on a BTRFS filesystem"
+    return 1
+  fi
+
   local SNAPS=()
   while IFS= read -r -d $'\0' snap; do
     [[ -n "$snap" ]] && SNAPS+=("$snap")
   done < <(find "$DST" -mindepth 1 -maxdepth 1 -name "${TAG}_*" -print0 | sort -z)
 
-  ## check time of the last snapshot for this tag
-  [[ "$TIME" != 0 ]] && [[ "${#SNAPS[@]}" != 0 ]] && {
-    local LATEST=$(sed -r "s|.*_(.*_.*)|\\1|;s|_([0-9]{2})([0-9]{2})([0-9]{2})| \\1:\\2:\\3|" <<< "${SNAPS[-1]}")
-    LATEST=$(date +%s -d "$LATEST") || return 1
+  if [[ "$TIME" -ne 0 ]] && [[ ${#SNAPS[@]} -gt 0 ]]; then
+    local latest_path="${SNAPS[-1]}"
+    local latest_name="${latest_path##*/}"
+    
+    if [[ "$latest_name" =~ _([0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{6})$ ]]; then
+      local ts_str="${BASH_REMATCH[1]}"
+      local formatted_ts="${ts_str:0:10} ${ts_str:11:2}:${ts_str:13:2}:${ts_str:15:2}"
+      local latest_epoch
+      latest_epoch=$(date +%s -d "$formatted_ts" 2>/dev/null)
 
-    [[ $(( LATEST + TIME )) -gt $(( $(date +%s) + MARGIN )) ]] && { echo "No new snapshot needed for $TAG in $DIR"; return 0; }
-  }
+      if [[ -n "$latest_epoch" ]]; then
+        local current_epoch=$(date +%s)
+        if [[ $(( latest_epoch + TIME )) -gt $(( current_epoch + MARGIN )) ]]; then
+          echo "No new snapshot needed for $TAG in $DIR"
+          return 0
+        fi
+      fi
+    fi
+  fi
 
   local SNAPSHOT="${TAG}_$(date +%F_%H%M%S)"
   local target_snapshot="$DST/$SNAPSHOT"
@@ -82,8 +103,6 @@ chmod +x /etc/cron.hourly/$BIN"
 
   ## do it
   btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
-
-  # Add new snapshot to tracking array for accurate excess evaluation
   SNAPS+=("$target_snapshot")
 
   ## prune older backups safely
