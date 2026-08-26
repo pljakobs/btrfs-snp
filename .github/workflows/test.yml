@@ -1,0 +1,68 @@
+name: Test btrfs-snp
+
+on:
+  push:
+    branches: [ "*" ]
+  pull_request:
+    branches: [ "main", "master" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up BTRFS loopback test environment
+        run: |
+          # 1. Create a sparse file to act as our disk (e.g., 500MB)
+          sudo truncate -s 500M /tmp/btrfs-disk.img
+
+          # 2. Format the file as btrfs
+          sudo mkfs.btrfs /tmp/btrfs-disk.img
+
+          # 3. Create a mount point and mount the btrfs filesystem
+          sudo mkdir -p /mnt/btrfs-test
+          sudo mount -o loop /tmp/btrfs-disk.img /mnt/btrfs-test
+
+          # 4. Create an initial BTRFS subvolume to act as our source directory
+          sudo btrfs subvolume create /mnt/btrfs-test/source_dir
+          
+          # Populate source_dir with dummy data
+          echo "Hello World" | sudo tee /mnt/btrfs-test/source_dir/testfile.txt
+
+      - name: Run script validations and tests
+        run: |
+          # Make sure the script is executable
+          chmod +x ./btrfs-snp
+
+          # Test 1: Run with no args / help block (runs as non-root to verify help output)
+          ./btrfs-snp -h || true
+
+          # Test 2: Verify non-root guard (should fail because EUID != 0)
+          if ./btrfs-snp /mnt/btrfs-test/source_dir; then
+            echo "Error: Script should have failed when run as non-root!"
+            exit 1
+          else
+            echo "Successfully caught non-root execution."
+          fi
+
+          # Test 3: Run full snapshot generation as root on the btrfs mount
+          sudo ./btrfs-snp /mnt/btrfs-test/source_dir test_tag 3 0 .snapshots
+
+          # Test 4: Verify snapshot was actually created on the btrfs filesystem
+          if [ -d "/mnt/btrfs-test/source_dir/.snapshots" ]; then
+            echo "Destination snapshot directory successfully created."
+            ls -la /mnt/btrfs-test/source_dir/.snapshots
+          else
+            echo "Error: Destination snapshot directory missing!"
+            exit 1
+          fi
+
+      - name: Cleanup BTRFS mount
+        if: always()
+        run: |
+          sudo umount /mnt/btrfs-test || true
+          rm -f /tmp/btrfs-disk.img
+
