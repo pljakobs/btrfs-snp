@@ -49,6 +49,9 @@ chmod +x /etc/cron.hourly/$BIN"
   }
 
   ## checks
+  exec 200>"/var/lock/${BIN}.lock"
+  flock -n 200 || { echo "Another instance of $BIN is already running"; return 1; }
+
   [[ ${EUID} -ne 0  ]] && { echo "Must be run as root. Try 'sudo $BIN'"; return 1; }
 
   mount -t btrfs | cut -d' ' -f3 | grep -q "^${DIR}$" || {
