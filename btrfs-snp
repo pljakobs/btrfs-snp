@@ -76,11 +76,6 @@ chmod +x /etc/cron.hourly/$BIN"
     [[ -n "$snap" ]] && SNAPS+=("$snap")
   done < <(find "$DST" -mindepth 1 -maxdepth 1 -name "${TAG}_*" -print0 | sort -z)
 
-  local SNAPS=()
-  while IFS= read -r -d $'\0' snap; do
-    [[ -n "$snap" ]] && SNAPS+=("$snap")
-  done < <(find "$DST" -mindepth 1 -maxdepth 1 -name "${TAG}_*" -print0 | sort -z)
-
   ## check time of the last snapshot for this tag with robust regex validation
   if [[ "$TIME" -ne 0 ]] && [[ ${#SNAPS[@]} -gt 0 ]]; then
     local latest_path="${SNAPS[-1]}"
@@ -101,11 +96,6 @@ chmod +x /etc/cron.hourly/$BIN"
       fi
     fi
   fi
-
-  local SNAPSHOT="${TAG}_$(date +%F_%H%M%S)"
-  local target_snapshot="$DST/$SNAPSHOT"
-
-  [[ -e "$target_snapshot" ]] && { echo "$target_snapshot already exists"; return 1; }
 
   local SNAPSHOT="${TAG}_$(date +%F_%H%M%S)"
   local target_snapshot="$DST/$SNAPSHOT"
