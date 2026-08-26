@@ -103,7 +103,10 @@ chmod +x /etc/cron.hourly/$BIN"
   [[ -e "$target_snapshot" ]] && { echo "$target_snapshot already exists"; return 1; }
 
   ## do it
-  btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
+  btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || {
+    echo "Error: Failed to create read-only snapshot. Check available disk space and filesystem health."
+    return 1
+  }
   SNAPS+=("$target_snapshot")
 
   ## prune older backups safely
