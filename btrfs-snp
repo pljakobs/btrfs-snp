@@ -53,7 +53,10 @@ chmod +x /etc/cron.hourly/$BIN"
   }
 
   ## checks
-  [[ ${EUID} -ne 0  ]] && { log "Must be run as root. Try 'sudo $BIN'"; return 1; }
+  exec 200>"/var/lock/${BIN}.lock"
+  flock -n 200 || { echo "Another instance of $BIN is already running"; return 1; }
+
+  [[ ${EUID} -ne 0  ]] && { echo "Must be run as root. Try 'sudo $BIN'"; return 1; }
 
   mount -t btrfs | cut -d' ' -f3 | grep -q "^${DIR}$" || {
     btrfs subvolume show "$DIR" &>/dev/null || {
@@ -107,7 +110,10 @@ chmod +x /etc/cron.hourly/$BIN"
   [[ -e "$target_snapshot" ]] && { log "$target_snapshot already exists"; return 1; }
 
   ## do it
-  btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
+  btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || {
+    echo "Error: Failed to create read-only snapshot. Check available disk space and filesystem health."
+    return 1
+  }
   SNAPS+=("$target_snapshot")
 
   ## prune older backups safely
