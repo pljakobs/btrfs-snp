@@ -14,6 +14,10 @@
 # More at https://ownyourbits.com
 #
 
+function log() {
+  echo "[$(date +'%Y-%m-%d %H:%M:%S')] $*"
+}
+
 function btrfs-snp()
 {
   local   BIN="${0##*/}"
@@ -49,17 +53,17 @@ chmod +x /etc/cron.hourly/$BIN"
   }
 
   ## checks
-  [[ ${EUID} -ne 0  ]] && { echo "Must be run as root. Try 'sudo $BIN'"; return 1; }
+  [[ ${EUID} -ne 0  ]] && { log "Must be run as root. Try 'sudo $BIN'"; return 1; }
 
   mount -t btrfs | cut -d' ' -f3 | grep -q "^${DIR}$" || {
     btrfs subvolume show "$DIR" &>/dev/null || {
-      echo "$DIR is not a BTRFS mountpoint or snapshot"
+	    log "$DIR is not a BTRFS mountpoint or snapshot"
       return 1
     }
   }
 
   [[ "$DST" = /* ]] || DST="$DIR/$DST"
-  mkdir -p "$DST" || { echo "Failed to create destination directory $DST"; return 1; }
+  mkdir -p "$DST" || { log "Failed to create destination directory $DST"; return 1; }
 
   # Explicit filesystem boundary validation for BTRFS snapshots
   local src_fs dest_fs
@@ -67,7 +71,7 @@ chmod +x /etc/cron.hourly/$BIN"
   dest_fs=$(stat -f -c %T "$DST" 2>/dev/null || stat -f %T "$DST" 2>/dev/null)
 
   if [[ "$src_fs" != "btrfs" ]] || [[ "$dest_fs" != "btrfs" ]]; then
-    echo "Error: Both source ($DIR) and destination ($DST) must reside on a BTRFS filesystem"
+	  log "Error: Both source ($DIR) and destination ($DST) must reside on a BTRFS filesystem"
     return 1
   fi
 
@@ -90,7 +94,7 @@ chmod +x /etc/cron.hourly/$BIN"
       if [[ -n "$latest_epoch" ]]; then
         local current_epoch=$(date +%s)
         if [[ $(( latest_epoch + TIME )) -gt $(( current_epoch + MARGIN )) ]]; then
-          echo "No new snapshot needed for $TAG in $DIR"
+		log "No new snapshot needed for $TAG in $DIR"
           return 0
         fi
       fi
@@ -100,7 +104,7 @@ chmod +x /etc/cron.hourly/$BIN"
   local SNAPSHOT="${TAG}_$(date +%F_%H%M%S)"
   local target_snapshot="$DST/$SNAPSHOT"
 
-  [[ -e "$target_snapshot" ]] && { echo "$target_snapshot already exists"; return 1; }
+  [[ -e "$target_snapshot" ]] && { log "$target_snapshot already exists"; return 1; }
 
   ## do it
   btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
@@ -108,7 +112,7 @@ chmod +x /etc/cron.hourly/$BIN"
 
   ## prune older backups safely
   [[ "$LIMIT" != 0 ]] && [[ ${#SNAPS[@]} -gt $LIMIT ]] && {
-    echo "Pruning old snapshots..."
+	 log "Pruning old snapshots..."
     local excess=$(( ${#SNAPS[@]} - LIMIT ))
     for (( i=0; i < excess; i++ )); do
       if [[ -d "${SNAPS[$i]}" ]]; then
@@ -117,8 +121,9 @@ chmod +x /etc/cron.hourly/$BIN"
     done
   }
 
-  echo "snapshot $SNAPSHOT generated"
+log "snapshot $SNAPSHOT generated"
 }
+
 
 btrfs-snp "$@"
 
