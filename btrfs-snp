@@ -61,7 +61,16 @@ chmod +x /etc/cron.hourly/$BIN"
   [[ "$DST" = /* ]] || DST="$DIR/$DST"
   mkdir -p "$DST" || { echo "Failed to create destination directory $DST"; return 1; }
 
-  # Safely collect existing snapshots using null-delimited find
+  # Explicit filesystem boundary validation for BTRFS snapshots
+  local src_fs dest_fs
+  src_fs=$(stat -f -c %T "$DIR" 2>/dev/null || stat -f %T "$DIR" 2>/dev/null)
+  dest_fs=$(stat -f -c %T "$DST" 2>/dev/null || stat -f %T "$DST" 2>/dev/null)
+
+  if [[ "$src_fs" != "btrfs" ]] || [[ "$dest_fs" != "btrfs" ]]; then
+    echo "Error: Both source ($DIR) and destination ($DST) must reside on a BTRFS filesystem"
+    return 1
+  fi
+
   local SNAPS=()
   while IFS= read -r -d $'\0' snap; do
     [[ -n "$snap" ]] && SNAPS+=("$snap")
@@ -105,8 +114,6 @@ chmod +x /etc/cron.hourly/$BIN"
 
   ## do it
   btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
-
-  # Add new snapshot to tracking array for accurate excess evaluation
   SNAPS+=("$target_snapshot")
 
   ## prune older backups safely
