@@ -61,6 +61,12 @@ chmod +x /etc/cron.hourly/$BIN"
   [[ "$DST" = /* ]] || DST="$DIR/$DST"
   mkdir -p "$DST" || { echo "Failed to create destination directory $DST"; return 1; }
 
+  # Safely collect existing snapshots using null-delimited find
+  local SNAPS=()
+  while IFS= read -r -d $'\0' snap; do
+    [[ -n "$snap" ]] && SNAPS+=("$snap")
+  done < <(find "$DST" -mindepth 1 -maxdepth 1 -name "${TAG}_*" -print0 | sort -z)
+
   local SNAPS=()
   while IFS= read -r -d $'\0' snap; do
     [[ -n "$snap" ]] && SNAPS+=("$snap")
@@ -92,8 +98,15 @@ chmod +x /etc/cron.hourly/$BIN"
 
   [[ -e "$target_snapshot" ]] && { echo "$target_snapshot already exists"; return 1; }
 
+  local SNAPSHOT="${TAG}_$(date +%F_%H%M%S)"
+  local target_snapshot="$DST/$SNAPSHOT"
+
+  [[ -e "$target_snapshot" ]] && { echo "$target_snapshot already exists"; return 1; }
+
   ## do it
   btrfs subvolume snapshot -r "$DIR" "$target_snapshot" || return 1
+
+  # Add new snapshot to tracking array for accurate excess evaluation
   SNAPS+=("$target_snapshot")
 
   ## prune older backups safely
@@ -128,4 +141,3 @@ btrfs-snp "$@"
 # along with this script; if not, write to the
 # Free Software Foundation, Inc., 59 Temple Place, Suite 330,
 # Boston, MA  02111-1307  USA
-
