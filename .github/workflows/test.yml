@@ -64,5 +64,5 @@ jobs:
         if: always()
         run: |
           sudo umount /mnt/btrfs-test || true
-          rm -f /tmp/btrfs-disk.img
+          sudo rm -f /tmp/btrfs-disk.img
 
